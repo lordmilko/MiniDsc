@@ -11,6 +11,8 @@ public class Component
 {
     public static Dictionary<string, Component> KnownComponents { get; set; }
 
+    public static object IsPermanent { get; set; }
+
     public string Type { get; set; }
     public Component Parent { get; set; }
     public Component[] Children { get; set; }
@@ -19,17 +21,18 @@ public class Component
     public string ForEach { get; set; }
 
     [Hidden]
-    public Hashtable Scratch { get; set; }
+    public Hashtable Vars { get; set; }
 
     static Component()
     {
         KnownComponents = new Dictionary<string, Component>();
+        IsPermanent = new object();
     }
 
     public Component(string type)
     {
         Type = type;
-        Scratch = new Hashtable();
+        Vars = new Hashtable();
     }
 
     public static Component GetComponentPrototype(string name)

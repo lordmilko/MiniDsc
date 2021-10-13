@@ -1,4 +1,4 @@
-function invoke-MiniDsc
+function Invoke-MiniDsc
 {
     [CmdletBinding()]
     param(
@@ -12,10 +12,14 @@ function invoke-MiniDsc
         [switch]$Apply,
 
         [Parameter(Mandatory=$true, ParameterSetName="Revert")]
-        [switch]$Revert
+        [switch]$Revert,
+
+        [Parameter(Mandatory=$false)]
+        [switch]$Quiet
     )
 
     $executor = New-DscExecutor
+    $executor.Quiet = $Quiet
 
     $global:currentExecutor = $executor
 
@@ -30,8 +34,12 @@ function invoke-MiniDsc
                 $executor | Invoke-ApplyRunner $Root
             }
 
-            "Revoke" {
-                throw "Revoke is not currently supported"
+            "Revert" {
+                $executor | Invoke-RevertRunner $Root
+            }
+
+            default {
+                throw "Don't know how to handle parameter set '$($PSCmdlet.ParameterSetName)'"
             }
         }
 

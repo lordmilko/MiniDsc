@@ -5,6 +5,7 @@ function New-DscExecutor
 
     $executor | Add-Member LastOfType @{}
     $executor | Add-Member Level 0
+    $executor | Add-Member Quiet $false
     $executor | Add-Member ScriptMethod IncrementLevel { $this.Level++ }
     $executor | Add-Member ScriptMethod DecrementLevel { $this.Level-- }
     $executor | Add-Member ScriptMethod LogLevel       { param($message) $this.Log($message, "Magenta") }
@@ -14,6 +15,11 @@ function New-DscExecutor
     $executor | Add-Member ScriptMethod LogQuiet       { param($message) $this.Log($message, "Gray") }
     $executor | Add-Member ScriptMethod Log {
         param($message, $color)
+
+        if($this.Quiet)
+        {
+            return
+        }
 
         $indent = "    " * $this.Level
 

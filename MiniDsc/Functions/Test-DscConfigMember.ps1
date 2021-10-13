@@ -53,10 +53,12 @@ function DoVerify($config, $record, $path, $isArray, $ignoreLeaves = $false)
         }
     }
 
+    Write-Verbose "Verifying config '$config' using record '@{Path=$($record.Path -join ","); Children=$($record.Children -join ",")}'. IsArray: $isArray, IgnoreLeaves: $ignoreLeaves"
+
     $members = $config.PSObject.Properties.Name
 
-    $missing = (GetMissing $config $record["Children"] $members $isArray)|where { $_ -notlike "*\?" }
-    $extra = (GetMissing $config $members $record["Children"] $isArray)|where { $_ -notlike "*\?" }
+    $missing = (GetMissing $config $record["Children"] $members $isArray)|where { !$_.EndsWith("?") }
+    $extra = (GetMissing $config $members $record["Children"] $isArray)|where { !$_.EndsWith("?") }
 
     if(!$path)
     {
@@ -80,7 +82,7 @@ function GetMissing($config, $first, $second, $isArray)
 
     foreach($entry in $first)
     {
-        if(!($entry -in $second))
+        if(($entry -notin $second) -and (($entry + "?") -notin $second))
         {
             $missing += $entry
         }

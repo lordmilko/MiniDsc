@@ -11,7 +11,10 @@ function Component
         [string]$Extends,
 
         [Parameter(Mandatory = $false)]
-        [CmdletType]$CmdletType = "Name"
+        [CmdletType]$CmdletType = "Name",
+
+        [Parameter(Mandatory = $false)]
+        [Hashtable[]]$ExtraParameters
     )
 
     $def = [PSCustomObject]$Definition
@@ -47,14 +50,34 @@ function Component
 
     [Component]::KnownComponents.$Name = $component
 
-    RegisterFunctionForCmdletType $Name $CmdletType
+    RegisterFunctionForCmdletType $Name $CmdletType $ExtraParameters
 }
 
-function RegisterFunctionForCmdletType($Name, $CmdletType)
+function RegisterFunctionForCmdletType($Name, $CmdletType, $ExtraParameters)
 {
     if($CmdletType -ne "None")
     {
         Get-Item Function:\$Name -ErrorAction SilentlyContinue|Remove-Item
+    }
+
+    if($ExtraParameters)
+    {
+        foreach($item in $ExtraParameters)
+        {
+            if(!$item.Type)
+            {
+                $item.Type = "string"
+            }
+
+            if(!$item.Mandatory)
+            {
+                $item.Mandatory=$true
+            }
+        }
+    }
+    else
+    {
+        $ExtraParameters =@()
     }
 
     $configBody = @"
@@ -66,9 +89,12 @@ function RegisterFunctionForCmdletType($Name, $CmdletType)
 
     switch($CmdletType)
     {
+        None {}
+
         Empty {
             Register-MiniDscFunction $Name @(
                 @{Name="ScriptBlock"; Type="ScriptBlock"; Mandatory=$false; Position = 0}
+                $ExtraParameters
             )
         }
 
@@ -76,12 +102,14 @@ function RegisterFunctionForCmdletType($Name, $CmdletType)
             Register-MiniDscFunction $Name @(
                 @{Name="Name";        Type="string";      Mandatory=$true;  Position = 0}
                 @{Name="ScriptBlock"; Type="ScriptBlock"; Mandatory=$false; Position = 1}
+                $ExtraParameters
             )
         }
 
         Config {
             Register-MiniDscFunction $Name @(
                 @{Name="Hashtable"; Type="Hashtable";    Mandatory=$false;  Position = 0}
+                $ExtraParameters
             ) -Body $configBody
         }
 
@@ -89,12 +117,22 @@ function RegisterFunctionForCmdletType($Name, $CmdletType)
             Register-MiniDscFunction $Name @(
                 @{Name="Name";      Type="string";      Mandatory=$true;  Position = 0}
                 @{Name="Hashtable"; Type = "Hashtable"; Mandatory=$false; Position = 1}
+                $ExtraParameters
             ) -Body $configBody
+        }
+
+        NamedValue {
+            Register-MiniDscFunction $Name @(
+                @{Name="Name"; Type="string"; Mandatory=$true; Position=0}
+                @{Name="Value"; Type="object"; Mandatory=$true; Position=1}
+                $ExtraParameters
+            )
         }
 
         Value {
             Register-MiniDscFunction $Name @(
                 @{Name="Value"; Type="object"; Mandatory=$true;  Position = 0}
+                $ExtraParameters
             )
         }
 

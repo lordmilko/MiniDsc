@@ -1,8 +1,16 @@
-function New-DscComponentInstance($cmdlet)
+function New-DscComponentInstance
 {
-    $componentName = $cmdlet.MyInvocation.MyCommand.Name
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, Position=0)]
+        $Cmdlet
+    )
 
-    $parameters = $cmdlet.MyInvocation.BoundParameters
+    Get-CallerPreference $PSCmdlet $ExecutionContext.SessionState
+
+    $componentName = $Cmdlet.MyInvocation.MyCommand.Name
+
+    $parameters = $Cmdlet.MyInvocation.BoundParameters
 
     $prototype = [Component]::GetComponentPrototype($componentName)
 
@@ -15,7 +23,7 @@ function New-DscComponentInstance($cmdlet)
         $component.ForEach = $parameters["ForEach"]
     }
 
-    Apply-DscBoundParameters $component $cmdlet
+    Apply-DscBoundParameters $component $Cmdlet
     MaybeTestConfig $component $prototype
 
     return $component
@@ -26,6 +34,12 @@ function Get-DscComponentChildren($component, $parameters)
     if ($parameters.ContainsKey("ScriptBlock"))
     {
         $scriptBlock = $parameters["ScriptBlock"]
+
+        # If ScriptBlock wasn't a mandatory parameter, its value could simply be null
+        if(!$scriptBlock)
+        {
+            return
+        }
 
         $initialChildren = & $scriptBlock
 
@@ -42,7 +56,7 @@ function Get-DscComponentChildren($component, $parameters)
         {
             if ($child.HasMethod("VerifyParent"))
             {
-                $child.VerifyParent($component)
+                $child.VerifyParent($component) | Out-Null
             }
 
             $child.Parent = $component
@@ -67,6 +81,10 @@ function Apply-DscConfigMember($component)
             if($property.Value -is [Hashtable])
             {
                 $match.Value = (ConvertTo-PsObject $property.Value)
+            }
+            elseif($property.Value -is [object[]] -and !($property.Value|where { $_ -isnot [Hashtable] }))
+            {
+                $match.Value = $property.Value | foreach { ConvertTo-PsObject $_ }
             }
             else
             {

@@ -38,7 +38,7 @@ Name Type   Parent Children
 foo  Folder                
 ```
 
-On Windows systems at least, we probably want to specify a *drive* to indicate where our folder should go. In a sense, a drive is also a type of folder. The `Component` function can model such relationships for us
+On Windows systems at least, we probably also want to specify a *drive* to indicate where our folder should go. In a sense, a drive is also a type of folder. The `Component` function can model such relationships for us
 
 ```powershell
 Component Drive -Extends Folder @{

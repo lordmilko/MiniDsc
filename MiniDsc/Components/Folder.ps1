@@ -26,6 +26,7 @@
 
 Component Drive -Extends Folder @{
     Apply={}
+    Revert={}
 
     Test={
         if(!(Test-Path $this.GetPath()))
@@ -33,7 +34,7 @@ Component Drive -Extends Folder @{
             throw "Cannot process drive '$($this.Name)': drive does not exist"
         }
 
-        return $true
+        return [Component]::IsPermanent
     }
 
     GetPath={ $this.Name + "\" }
