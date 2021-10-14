@@ -1,3 +1,4 @@
+Remove-Module MiniDsc -ErrorAction SilentlyContinue # Mocks don't work when you reimport the module
 ipmo $PSScriptRoot\..\MiniDsc -Force -DisableNameChecking
 
 function Verify
@@ -37,6 +38,86 @@ function Verify
     }
 }
 
+function MockInvokeDscResource($path = "C:\test.txt", $ensure = "Present")
+{
+    Mock "InvokeDscResource" {
+
+        param($dscArgs)
+
+        "Method","Property","Name","ModuleName" | foreach {
+            if(!$dscArgs.ContainsKey($_))
+            {
+                throw "Did not have parameter '$_'"
+            }
+        }
+
+        if($dscArgs.Method -eq "Test")
+        {
+            return [PSCustomObject]@{
+                InDesiredState=$true
+            }
+        }
+
+        foreach($key in $dscArgs.Keys)
+        {
+            $val = $dscArgs[$key]
+
+            switch($key)
+            {
+                "Method" {
+                    $val | Should Be Set
+                }
+
+                "Property" {
+                    "Contents","DestinationPath","Ensure" | foreach {
+
+                        if(!$val.ContainsKey($_))
+                        {
+                            throw "Did not have property '$_'"
+                        }
+                    }
+
+                    foreach($propertyKey in $val.Keys)
+                    {
+                        $propertyVal = $val[$propertyKey]
+
+                        switch($propertyKey)
+                        {
+                            "Contents" {
+                                $propertyVal | Should Be bar
+                            }
+
+                            "DestinationPath" {
+                                $propertyVal | Should Be $path
+                            }
+
+                            "Ensure" {
+                                $propertyVal | Should Be $ensure
+                            }
+
+                            default {
+                                throw "Don't know how to handle property '$key'"
+                            } 
+                        }
+                    }
+                }
+
+                "Name" {
+                    $val | Should Be File
+                }
+
+                "ModuleName" {
+                    $val | Should Be foo
+                }
+
+                default {
+                    throw "Don't know how to handle parameter '$key'"
+                }
+            }
+        }
+    }.GetNewClosure() -ModuleName MiniDsc -Verifiable
+}
+
 Describe "Invoke-MiniDsc" {
     BeforeAll {
         $originalDefaultParameterValues = $global:PSDefaultParameterValues.Clone()
@@ -49,8 +130,12 @@ Describe "Invoke-MiniDsc" {
     }
 
     BeforeEach {
-        [Component]::KnownComponents.Remove("TestComponent")
-        [Component]::KnownComponents.Remove("TestChildComponent")
+        "TestComponent","TestChildComponent" | foreach {
+            [Component]::KnownComponents.Remove($_)
+            Get-Item Function:\$_ -ErrorAction SilentlyContinue|Remove-Item
+        }
+
+        $Global:miniDscKnownDscModules = $null
         
         Remove-Variable testVal -Scope Global -ErrorAction SilentlyContinue
     }
@@ -260,7 +345,7 @@ Describe "Invoke-MiniDsc" {
             $tree | Invoke-MiniDsc -Apply
 
             Test-Path $tree.Children[0].GetPath() | Should Be $true
-        }        
+        }
     }
 
     Context "Revert" {
@@ -280,5 +365,90 @@ Describe "Invoke-MiniDsc" {
 
             Test-Path $tree.Children[0].GetPath() | Should Be $false
         }   
+    }
+
+    Context "DSC" {
+        It "applies a DSC resource" {
+
+            MockInvokeDscResource
+
+            Mock "GetModule" {
+                return $true
+            } -ModuleName MiniDsc
+
+            Component File -Module foo @{
+                DestinationPath=0
+                Contents=1
+            }
+
+            File "C:\test.txt" "bar" | Invoke-MiniDsc -Apply
+
+            Assert-VerifiableMocks
+        }
+
+        It "reverts a DSC resource" {
+            
+            $path = Join-Path $TestDrive "text.txt"
+
+            MockInvokeDscResource $path Absent
+
+            Component File -Module foo @{
+                DestinationPath=0
+                Contents=1
+            }
+
+            New-Item $path -Force
+            Set-Content $path "bar" -NoNewline
+
+            File $path "bar" | Invoke-MiniDsc -Revert
+
+            Assert-VerifiableMocks
+        }
+
+        It "installs a missing DSC module" {
+
+            Mock "GetModule" {
+                $false
+            } -ModuleName MiniDsc -ParameterFilter { $name -eq "foo" } -Verifiable
+
+            Mock "InstallPackage" {
+                $name | Should Be foo
+            } -ModuleName MiniDsc -Verifiable
+
+            Mock "InvokeDscResource" {} -ModuleName MiniDsc
+
+            Component File -Module foo @{
+                DestinationPath=0
+                Contents=1
+            }
+
+            File "C:\test.txt" "bar" | Invoke-MiniDsc -Apply
+
+            Assert-VerifiableMocks
+        }
+
+        It "applies a DSC resource with optional parameters" {
+
+            Component File -Dsc @{
+                DestinationPath=0
+                Contents=1
+
+                Attributes=$null
+            }
+
+            Mock "InvokeDscResource" {
+                $property = $dscArgs.Property
+
+                $property.Count | Should Be 3
+
+                "Contents","DestinationPath","Ensure" | foreach { $property.ContainsKey($_) | Should Be $true }
+
+                $property.ContainsKey("Attributes") | Should Be $false
+            } -ModuleName MiniDsc -Verifiable
+
+            File "C:\test.txt" "bar" | Invoke-MiniDsc -Apply
+
+            Assert-VerifiableMocks
+        }
     }
 }

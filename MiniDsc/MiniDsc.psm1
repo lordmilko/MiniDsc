@@ -1,5 +1,7 @@
 $files = "Functions","Components" | foreach { gci (Join-Path $PSScriptRoot $_) -Recurse -File }
 
+$ErrorActionPreference = "Stop"
+
 foreach($file in $files)
 {
     . $file.FullName -Force
@@ -16,6 +18,7 @@ enum CmdletType
     NamedConfig # Cmdlet takes a name and a hashtable
     NamedValue  # Cmdlet takes a name and a value
     Value       # Cmdlet takes a value
+    Custom      # Cmdlet takes whatever parameters are specified to ExtraParameters
 }
 
 function Assert-HasMethod

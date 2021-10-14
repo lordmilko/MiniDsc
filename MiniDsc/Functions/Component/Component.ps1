@@ -1,5 +1,6 @@
 function Component
 {
+    [CmdletBinding(DefaultParameterSetName="Default")]
     param(
         [Parameter(Mandatory = $true, Position = 0)]
         [string]$Name,
@@ -7,15 +8,35 @@ function Component
         [Parameter(Mandatory = $true, Position = 1)]
         [Hashtable]$Definition,
 
-        [Parameter(Mandatory = $false)]
+        [Parameter(Mandatory = $false, ParameterSetName="Default")]
         [string]$Extends,
 
-        [Parameter(Mandatory = $false)]
+        [Parameter(Mandatory = $false, ParameterSetName="Default")]
         [CmdletType]$CmdletType = "Name",
 
         [Parameter(Mandatory = $false)]
-        [Hashtable[]]$ExtraParameters
+        [Hashtable[]]$ExtraParameters,
+
+        [Parameter(Mandatory = $false, ParameterSetName="Dsc")]
+        [switch]$Dsc,
+
+        [Parameter(Mandatory = $false, ParameterSetName="Dsc")]
+        [string]$DscName,
+
+        [Alias("ModuleName","DscModule","DscModuleName")]
+        [Parameter(Mandatory = $false, ParameterSetName="Dsc")]
+        [string]$Module = "PSDesiredStateConfiguration"
     )
+
+    if($PSCmdlet.ParameterSetName -eq "Dsc")
+    {
+        if(!$DscName)
+        {
+            $DscName = $Name
+        }
+
+        $CmdletType = "Custom"
+    }
 
     $def = [PSCustomObject]$Definition
     $properties = $def.PSObject.Properties
@@ -31,7 +52,7 @@ function Component
     }
     else
     {
-        $component = New-DscComponentPrototype $Name
+        $component = New-DscComponentPrototype $Name -Dsc:$($PSCmdlet.ParameterSetName -eq "Dsc") -DscName $DscName -DscModule $Module
     }
 
     $realMethods = [Component].GetMethods().Name | where { $_ -notlike "get_*" -and $_ -notlike "set_*" }
@@ -49,6 +70,57 @@ function Component
     }
 
     [Component]::KnownComponents.$Name = $component
+
+    if ($PSCmdlet.ParameterSetName -eq "Dsc")
+    {
+        if($ExtraParameters -eq $null)
+        {
+            $ExtraParameters = @()
+        }
+
+        $excluded = @()
+
+        foreach($key in $Definition.Keys)
+        {
+            $value = $Definition[$key]
+
+            if($value -is [ScriptBlock])
+            {
+                $excluded += $key
+                continue
+            }
+
+            $config = @{Name=$key; Mandatory=$false; Type="object"}
+
+            if($value -is [int])
+            {
+                $config.Mandatory = $true
+                $config.Position = $value
+            }
+
+            $ExtraParameters += $config
+        }
+
+        $nextPosition = 0
+
+        $lastPosition = $ExtraParameters|sort { $_.Position }
+
+        if($lastPosition)
+        {
+            $nextPosition = ($lastPosition|select -last 1).Position + 1
+        }
+
+        $ExtraParameters += @{Name="ScriptBlock"; Type="ScriptBlock"; Mandatory=$false; Position = $nextPosition}
+
+        $ExtraParameters += @{
+            Name="Ensure"
+            Mandatory=$false
+            Attributes="[ValidateSet('Present', 'Absent')]"
+            Default="Present"
+        }
+
+        $component | Add-Member DscMembers ($Definition.Keys | where { $_ -notin $excluded })
+    }
 
     RegisterFunctionForCmdletType $Name $CmdletType $ExtraParameters
 }
@@ -69,7 +141,7 @@ function RegisterFunctionForCmdletType($Name, $CmdletType, $ExtraParameters)
                 $item.Type = "string"
             }
 
-            if(!$item.Mandatory)
+            if(!$item.ContainsKey("Mandatory"))
             {
                 $item.Mandatory=$true
             }
@@ -134,6 +206,10 @@ function RegisterFunctionForCmdletType($Name, $CmdletType, $ExtraParameters)
                 @{Name="Value"; Type="object"; Mandatory=$true;  Position = 0}
                 $ExtraParameters
             )
+        }
+
+        Custom {
+            Register-MiniDscFunction $Name $ExtraParameters
         }
 
         default {

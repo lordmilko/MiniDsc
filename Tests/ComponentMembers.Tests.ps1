@@ -1,3 +1,4 @@
+Remove-Module MiniDsc -ErrorAction SilentlyContinue # Mocks don't work when you reimport the module
 ipmo $PSScriptRoot\..\MiniDsc -Force -DisableNameChecking
 
 Describe "ComponentMembers" {
@@ -12,9 +13,10 @@ Describe "ComponentMembers" {
     }
 
     BeforeEach {
-        [Component]::KnownComponents.Remove("TestComponent")
-        [Component]::KnownComponents.Remove("TestChildComponent")
-        [Component]::KnownComponents.Remove("TestExtendedComponent")
+        "TestComponent","TestChildComponent","TestExtendedComponent" | foreach {
+            [Component]::KnownComponents.Remove($_)
+            Get-Item Function:\$_ -ErrorAction SilentlyContinue|Remove-Item
+        }
         
         Remove-Variable testVal -Scope Global -ErrorAction SilentlyContinue
     }

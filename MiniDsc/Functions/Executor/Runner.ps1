@@ -231,7 +231,7 @@ function InvokeRunnerNormalSteps
             }
             else
             {
-                if($testResult -eq [Component]::IsPermanent)
+                if([Component]::IsPermanent.Equals($testResult))
                 {
                     $Executor.LogWarning("Node '$Node' is a permanent resource and cannot be modified")
                 }

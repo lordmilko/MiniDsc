@@ -37,5 +37,14 @@ Component Drive -Extends Folder @{
         return [Component]::IsPermanent
     }
 
+    VerifyParent={
+        param($parent)
+
+        if ($parent.Type -eq "Folder" -or $parent.Type -eq "Drive")
+        {
+            throw "The parent of a drive component must not be another Folder or a Drive"
+        }
+    }
+
     GetPath={ $this.Name + "\" }
 }

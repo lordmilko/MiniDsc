@@ -47,7 +47,7 @@ function Get-DscComponentChildren($component, $parameters)
 
         if($config)
         {
-            Apply-DscConfigMember $component
+            Apply-DscConfigMember $component $config
         }
 
         $children = $initialChildren | where { $_ -ne $config }
@@ -68,7 +68,7 @@ function Get-DscComponentChildren($component, $parameters)
     }
 }
 
-function Apply-DscConfigMember($component)
+function Apply-DscConfigMember($component, $config)
 {
     $realMembers = $component.PSObject.Properties | where MemberType -eq NoteProperty
 

@@ -20,6 +20,8 @@ function Register-MiniDscFunction
     $builder.AppendLine("    [CmdletBinding()]")          | Out-Null
     $builder.AppendLine("    param(")                     | Out-Null
 
+    $defaultParameters = @()
+
     for($i = 0; $i -lt $Parameters.Count; $i++)
     {
         $parameter = $Parameters[$i]
@@ -38,7 +40,22 @@ function Register-MiniDscFunction
         }
 
         $builder.AppendLine(")]") | Out-Null
+
+        if($parameter.ContainsKey("Attributes"))
+        {
+            foreach($attribute in @($parameter.Attributes))
+            {
+                $builder.Append("        ").AppendLine($attribute) | Out-Null
+            }
+        }
+
         $builder.Append("        [$type]`$$name") | Out-Null
+
+        if($parameter.ContainsKey("Default"))
+        {
+            $defaultParameters += $name
+            $builder.Append(" = '$($parameter.Default)'") | Out-Null
+        }
 
         if($i -lt $Parameters.Count - 1)
         {
@@ -50,6 +67,12 @@ function Register-MiniDscFunction
 
     $builder.AppendLine("    )") | Out-Null
     $builder.AppendLine() | Out-Null
+
+    foreach($defaultParameter in $defaultParameters)
+    {
+        # If a default parameter isn't overridden by the user, its default value won't be included in the bound parameters; force re-add all of these values
+        $builder.AppendLine("    `$PSCmdlet.MyInvocation.BoundParameters['$defaultParameter'] = `$$defaultParameter") | Out-Null
+    }
 
     if($Body)
     {

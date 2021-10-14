@@ -92,4 +92,34 @@ $tree | Invoke-MiniDsc -Apply
 
 It's as easy as that! The hard part is simply defining all the little components you'll need in order to achieve your goal. If somebody else has already written some of these components, that just makes things even easier for you.
 
+### Normal DSC
+
+If there is an existing Normal DSC resource that achieves the thing you're after, you can define a lightweight MiniDsc component that simply describes the parameters required to invoke the Normal DSC resource.
+
+```powershell
+# Define a component for the 'File' DSC resource, with the 'DestinationPath' and 'Contents' properties
+# configured as positional parameters
+Component File -Dsc {
+    DestinationPath=0
+    Contents=1
+}
+
+# Apply the component!
+File C:\foo.txt "MiniDsc is awesome!" | Invoke-MiniDsc -Apply
+```
+```powershell
+# Define a component for the 'File' DSC resource, specifying the module name,
+# an alternate component name and an optional Attributes property
+Component DscFile -DscName File -Module PSDesiredStateConfiguration @{
+    DestinationPath=0
+    Contents=1
+
+    Attributes=$null
+}
+
+# Apply the component!
+# Observe that we explicitly specify a string[] to -Attributes so the Normal DSC engine doesn't complain
+DscFile C:\foo.txt "MiniDsc is awesome!" -Attributes @("Hidden") | Invoke-MiniDsc -Apply
+```
+
 For more information, including advanced configuration scenarios, please see the [wiki](https://github.com/lordmilko/MiniDsc/wiki).
