@@ -1,4 +1,4 @@
-$files = "Functions","Components" | foreach { gci (Join-Path $PSScriptRoot $_) -Recurse -File }
+$files = "Functions","ThirdParty" | foreach { gci (Join-Path $PSScriptRoot $_) -Recurse -File }
 
 $ErrorActionPreference = "Stop"
 

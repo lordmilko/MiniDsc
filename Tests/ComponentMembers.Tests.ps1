@@ -250,4 +250,26 @@ Describe "ComponentMembers" {
 
         $Global:testVal | Should Be bar
     }
+
+    It "calls a base method" {
+        $Global:testVal = @()
+
+        Component TestComponent -CmdletType Empty @{
+            Init={
+                $Global:testVal += "base"
+            }
+        }
+
+        Component TestExtendedComponent -Extends TestComponent -CmdletType Empty @{
+            Init={
+                $Global:testVal += "derived"
+
+                $this.Base.Init()
+            }
+        }
+
+        TestExtendedComponent | Invoke-MiniDsc -Apply
+
+        $Global:testVal -join "," | Should Be "derived,base"
+    }
 }

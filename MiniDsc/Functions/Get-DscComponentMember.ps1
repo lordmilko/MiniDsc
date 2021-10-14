@@ -15,7 +15,9 @@ function Get-DscComponentMember
         @{Name="VerifyParent"; Type="ScriptBlock"; Description="Verifies that the specified parent is valid for this node. Takes the `$parent component as an argument."}
         @{Name="VerifyConfig"; Type="Hashtable[]"; Description="Validates a complex Hashtable configuration against the required specification."}
         @{Name="Steps"; Type="string[]"; Description="Specifies the multiple step names that are required to execute this component. Test/Apply/Revert methods can then be split into separate methods for each individual step."}
-        @{Name="DynamicSteps"; Type="ScriptBlock"; Description="Specifies a set of dynamic child components that should be evaluated for this node prior to evaluating its specified Steps or itself"}
+        @{Name="DynamicSteps"; Type="ScriptBlock"; Description="Specifies a set of dynamic child components that should be evaluated for this node prior to evaluating its specified Steps or itself."}
+        @{Name="Vars"; Type="Hashtable"; Description="Provides a scratch storage space for component methods to store variables within a component invocation."}
+        @{Name="Base"; Type="Component"; Description="Provides access to the methods of the base component when one component -Extends another one."}
     )
 
     $results = $members | foreach { [PSCustomObject]$_|select Name,Type,Description }

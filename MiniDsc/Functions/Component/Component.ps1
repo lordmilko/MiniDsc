@@ -49,6 +49,8 @@ function Component
 
         $component = $prototype | Copy-DscComponentPrototype
         $component.Type = $Name
+
+        $component | Add-Member Base (New-Object PSObject) -Force
     }
     else
     {
@@ -59,6 +61,27 @@ function Component
 
     foreach($property in $properties)
     {
+        if($Extends)
+        {
+            $original = $component.PSObject.Members[$property.Name]
+
+            if($original)
+            {
+                $value = $null
+
+                if($original.MemberType -eq "ScriptMethod")
+                {
+                    $value = $original.Script
+                }
+                else
+                {
+                    $value = $original.Value
+                }
+
+                $component.Base | Add-Member $original.MemberType $original.Name $value
+            } 
+        }
+
         if($property.Value -is [ScriptBlock])
         {
             $component | Add-Member ScriptMethod $property.Name $property.Value -Force

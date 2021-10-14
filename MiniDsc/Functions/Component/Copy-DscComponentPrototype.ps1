@@ -14,12 +14,6 @@ function Copy-DscComponentPrototype
     # ScriptMethod members to it. Perfect! That's all we really need
     $newComponent = New-DscComponentPrototype $Prototype.Type
 
-    if ($AsInstance)
-    {
-        $newComponent.PSObject.TypeNames.Remove("ComponentPrototype") | Out-Null
-        $newComponent.PSObject.TypeNames.Add("ComponentInstance")
-    }
-
     foreach($property in $Prototype.PSObject.Properties)
     {
         if($property.MemberType -eq "NoteProperty")
@@ -33,6 +27,25 @@ function Copy-DscComponentPrototype
         if($method.MemberType -eq "ScriptMethod")
         {
             $newComponent | Add-Member ScriptMethod $method.Name $method.Value.Script -Force
+        }
+    }
+
+    if ($AsInstance)
+    {
+        $newComponent.PSObject.TypeNames.Remove("ComponentPrototype") | Out-Null
+        $newComponent.PSObject.TypeNames.Add("ComponentInstance")
+
+        $base = $newComponent.PSObject.Properties["Base"]
+
+        if($base)
+        {
+            foreach($method in $newComponent.Base.PSObject.Methods)
+            {
+                if($method.MemberType -eq "ScriptMethod")
+                {
+                    $newComponent.Base | Add-Member ScriptMethod $method.Name { $method.Script.InvokeWithContext($null, (New-Object PSVariable "this", $newComponent)) }.GetNewClosure() -Force
+                }
+            }
         }
     }
 
