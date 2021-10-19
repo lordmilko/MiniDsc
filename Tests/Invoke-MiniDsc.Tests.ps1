@@ -1,5 +1,4 @@
-Remove-Module MiniDsc -ErrorAction SilentlyContinue # Mocks don't work when you reimport the module
-ipmo $PSScriptRoot\..\MiniDsc -Force -DisableNameChecking
+. $PSScriptRoot\Support\Init.ps1
 
 function Verify
 {
@@ -211,27 +210,6 @@ Describe "Invoke-MiniDsc" {
         }
 
         Verify $body -Throws "End was called"
-    }
-
-    It "verifies a parent" {
-        
-        Component TestChildComponent @{
-            VerifyParent={
-                param($parent)
-
-                $parent.Type | Should Be TestComponent
-
-                $Global:testVal = $true
-            }
-        }
-
-        $children = {
-            TestChildComponent foo
-        }
-
-        Verify @{} -Children $children {
-            $Global:testVal | Should Be $true
-        }
     }
 
     It "applies a config" {

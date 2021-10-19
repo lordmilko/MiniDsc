@@ -1,5 +1,4 @@
-Remove-Module MiniDsc -ErrorAction SilentlyContinue # Mocks don't work when you reimport the module
-ipmo $PSScriptRoot\..\MiniDsc -Force -DisableNameChecking
+. $PSScriptRoot\Support\Init.ps1
 
 Describe "ComponentDef" {
     BeforeAll {
@@ -78,6 +77,46 @@ Describe "ComponentDef" {
         $tree | Invoke-MiniDsc -Apply
 
         $Global:testVal -join "," | Should Be "first,second"
+    }
+
+    It "implements a ScriptProperty via a simple assignment" {
+
+        Component TestComponent @{
+            Name=$null
+        }
+
+        Component TestChildComponent -CmdletType Value @{
+            Value=$null
+        }
+
+        $tree = TestComponent foo {
+            TestChildComponent { $this.GetParent("TestComponent").Name }
+        }
+
+        $tree.Name | Should Be foo
+        $tree.Children[0].Value | Should Be foo
+    }
+
+    It "implements a ScriptProperty via a Config block" {
+
+        Component TestComponent @{
+            Name=$null
+        }
+
+        Component TestChildComponent -CmdletType Empty @{
+            Value=$null
+        }
+
+        $tree = TestComponent bar {
+            TestChildComponent {
+                Config @{
+                    Value={ $this.GetParent("TestComponent").Name }
+                }
+            }
+        }
+
+        $tree.Name | Should Be bar
+        $tree.Children[0].Value | Should Be bar
     }
 
     Context "Dsc" {

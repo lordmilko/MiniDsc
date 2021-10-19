@@ -1,7 +1,9 @@
-Remove-Module MiniDsc -ErrorAction SilentlyContinue # Mocks don't work when you reimport the module
-ipmo $PSScriptRoot\..\MiniDsc -Force -DisableNameChecking
+. $PSScriptRoot\Support\Init.ps1
 
-Describe "ComponentMembers" {
+# Tests complex extension methods that are defined on the component prototype or methods that are able to execute
+# independently of Invoke-MiniDsc
+
+Describe "ComponentExtensions" {
     BeforeAll {
         $originalDefaultParameterValues = $global:PSDefaultParameterValues.Clone()
 
@@ -13,7 +15,7 @@ Describe "ComponentMembers" {
     }
 
     BeforeEach {
-        "TestComponent","TestChildComponent","TestExtendedComponent" | foreach {
+        "TestComponent","TestChildComponent","TestGrandChildComponent","TestExtendedComponent" | foreach {
             [Component]::KnownComponents.Remove($_)
             Get-Item Function:\$_ -ErrorAction SilentlyContinue|Remove-Item
         }
@@ -21,7 +23,7 @@ Describe "ComponentMembers" {
         Remove-Variable testVal -Scope Global -ErrorAction SilentlyContinue
     }
 
-    It "gets the parent of a component" {
+    It "Parent: gets the parent of a component" {
         
         Component TestComponent -CmdletType Empty  @{}
 
@@ -32,7 +34,7 @@ Describe "ComponentMembers" {
         $tree.Children[0].Parent.Type | Should Be Root
     }
 
-    It "gets the children of a component" {
+    It "Children: gets the children of a component" {
         
         Component TestComponent @{
             Name=$null
@@ -48,7 +50,7 @@ Describe "ComponentMembers" {
         $tree.Children[1].Name | Should Be second
     }
 
-    It "gets the parent of a specified type" {
+    It "GetParent(`$type): gets the parent of a specified type" {
 
         Component TestComponent -CmdletType Empty  @{}
         Component TestChildComponent -CmdletType Empty  @{}
@@ -69,7 +71,31 @@ Describe "ComponentMembers" {
         $grandParent.Type | Should Be Root
     }
 
-    It "gets children of a specified type" {
+    It "VerifyParent(`$parent): gets the grandparent of a specified type" {
+
+        Component TestComponent -CmdletType Empty @{}
+        Component TestChildComponent -CmdletType Empty @{}
+
+        Component TestGrandChildComponent -CmdletType Empty @{
+            VerifyParent={
+                param($parent)
+
+                $parent = $this.GetParent("TestComponent")
+
+                $Global:testVal = $parent
+            }
+        }
+
+        $tree = TestComponent {
+            TestChildComponent {
+                TestGrandChildComponent
+            }
+        }
+
+        $Global:testVal | Should Be $tree
+    }
+
+    It "GetChildren(`$type): gets children of a specified type" {
 
         Component TestComponent  @{
             Name=$null
@@ -92,7 +118,7 @@ Describe "ComponentMembers" {
         $child[1].Name | Should Be second
     }
 
-    It "throws when a parent of a specified type does not exist" {
+    It "GetParent(`$type): throws when a parent of a specified type does not exist" {
         
         Component TestComponent -CmdletType Empty  @{}
 
@@ -106,7 +132,7 @@ Describe "ComponentMembers" {
         { $child.GetParent("foo") } | Should Throw "Could not find parent of type 'foo'"
     }
 
-    It "throws when a child of a specified type does not exist" {
+    It "GetChildren(`$type): throws when a child of a specified type does not exist" {
         
         Component TestComponent -CmdletType Empty  @{}
 
@@ -119,7 +145,7 @@ Describe "ComponentMembers" {
         { $tree.GetChildren("foo") } | Should Throw "Could not find any children of type 'foo'"
     }
 
-    It "finds a node of a specified type in the tree" {
+    It "Find(`$type): finds a node of a specified type in the tree" {
 
         Component TestComponent -CmdletType Empty  @{}
         Component TestChildComponent -CmdletType Empty  @{}
@@ -135,7 +161,7 @@ Describe "ComponentMembers" {
         $result.Type | Should Be TestChildComponent
     }
 
-    It "throws when a node of a specified type cannot be found in the tree" {
+    It "Find(`$type): throws when a node of a specified type cannot be found in the tree" {
         
         Component TestComponent -CmdletType Empty  @{}
         Component TestChildComponent -CmdletType Empty  @{}
@@ -149,7 +175,7 @@ Describe "ComponentMembers" {
         { $tree.Find("foo") } | Should Throw "Could not find a component of type 'foo' in the tree."
     }
 
-    It "gets the last node of a specified type that was executed before this node" {
+    It "GetLast(`$type): gets the last node of a specified type that was executed before this node" {
         $Global:testVal = @()
 
         Component TestComponent -CmdletType Empty @{
@@ -176,7 +202,7 @@ Describe "ComponentMembers" {
         $Global:testVal -join "," | Should Be "first,second"
     }
 
-    It "indicates whether a method is present via HasMethod" {
+    It "HasMethod(): indicates whether a method is present via HasMethod" {
 
         Component TestComponent -CmdletType Empty @{
             Init={}
@@ -187,7 +213,7 @@ Describe "ComponentMembers" {
         $tree.HasMethod("End") | Should Be $false
     }
 
-    It "indicates whether a property is present via HasProperty" {
+    It "HasProperty(): indicates whether a property is present via HasProperty" {
         
         Component TestComponent -CmdletType Empty @{
             Name=$null
@@ -198,7 +224,7 @@ Describe "ComponentMembers" {
         $tree.HasProperty("Foo") | Should Be $false
     }
 
-    It "automatically overrides ToString when a Name property is present" {
+    It "ToString(): automatically overrides ToString when a Name property is present" {
         
         Component TestComponent @{
             Name=$null
@@ -209,7 +235,7 @@ Describe "ComponentMembers" {
         $tree.ToString() | Should Be "[TestComponent] foo"
     }
 
-    It "overrides ToString with a custom method override" {
+    It "ToString(): overrides ToString with a custom method override" {
         
         Component TestComponent @{
             Name=$null
@@ -224,7 +250,7 @@ Describe "ComponentMembers" {
         $tree.ToString() | Should Be custom
     }
 
-    It "returns the component's type when a suitable ToString override is not found" {
+    It "ToString(): returns the component's type when a suitable ToString override is not found" {
         
         Component TestComponent -CmdletType Empty @{}
 
@@ -233,7 +259,41 @@ Describe "ComponentMembers" {
         $tree.ToString() | Should Be TestComponent
     }
 
-    It "stores values in Vars" {
+    It "VerifyParent(`$parent): verifies a parent" {
+        
+        Component TestComponent -CmdletType Empty @{}
+
+        Component TestChildComponent -CmdletType Empty @{
+            VerifyParent={
+                param($parent)
+
+                $parent.Type | Should Be TestComponent
+
+                $Global:testVal = $true
+            }
+        }
+
+        $tree = TestComponent {
+            TestChildComponent
+        }
+
+        $Global:testVal | Should Be $true
+    }
+
+    It "Verify(): verifies a components state" {
+
+        Component TestComponent -CmdletType Empty @{
+            Verify={
+                $Global:testVal = "verifySuccess"
+            }
+        }
+
+        $tree = TestComponent
+
+        $Global:testVal | Should Be verifySuccess
+    }
+
+    It "Vars: stores values in Vars" {
         Component TestComponent -CmdletType Empty @{
             Init={
                 $this.Vars.Foo = "bar"
@@ -251,7 +311,7 @@ Describe "ComponentMembers" {
         $Global:testVal | Should Be bar
     }
 
-    It "calls a base method" {
+    It "Base: calls a base method" {
         $Global:testVal = @()
 
         Component TestComponent -CmdletType Empty @{

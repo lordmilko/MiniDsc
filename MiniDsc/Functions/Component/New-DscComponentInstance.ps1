@@ -9,24 +9,61 @@ function New-DscComponentInstance
     Get-CallerPreference $PSCmdlet $ExecutionContext.SessionState
 
     $componentName = $Cmdlet.MyInvocation.MyCommand.Name
-
+    $prototype = [Component]::GetComponentPrototype($componentName)
+    $component = $prototype | Copy-DscComponentPrototype -AsInstance
     $parameters = $Cmdlet.MyInvocation.BoundParameters
 
-    $prototype = [Component]::GetComponentPrototype($componentName)
+    EnterParent $component
 
-    $component = $prototype | Copy-DscComponentPrototype -AsInstance
-
-    $component.Children = Get-DscComponentChildren $component $parameters
-
-    if($parameters.ContainsKey("ForEach"))
+    try
     {
-        $component.ForEach = $parameters["ForEach"]
+        $component.Children = Get-DscComponentChildren $component $parameters
+
+        if($parameters.ContainsKey("ForEach"))
+        {
+            $component.ForEach = $parameters["ForEach"]
+        }
+
+        Apply-DscBoundParameters $component $Cmdlet
+        MaybeTestConfig $component $prototype
+
+        if($component.HasMethod("Verify"))
+        {
+            $component.Verify()
+        }
+    }
+    finally
+    {
+        ExitParent
     }
 
-    Apply-DscBoundParameters $component $Cmdlet
-    MaybeTestConfig $component $prototype
-
     return $component
+}
+
+$script:miniDscParentStack = $null
+
+function EnterParent($component)
+{
+    if($null -eq $script:miniDscParentStack)
+    {
+        $script:miniDscParentStack = New-Object System.Collections.Generic.Stack[Component]
+    }
+    else
+    {
+        $component.Parent = $script:miniDscParentStack.Peek()
+    }
+
+    $script:miniDscParentStack.Push($component)
+}
+
+function ExitParent
+{
+    $script:miniDscParentStack.Pop() | Out-Null
+
+    if($script:miniDscParentStack.Count -eq 0)
+    {
+        $script:miniDscParentStack = $null
+    }
 }
 
 function Get-DscComponentChildren($component, $parameters)
@@ -78,17 +115,26 @@ function Apply-DscConfigMember($component, $config)
 
         if($match)
         {
-            if($property.Value -is [Hashtable])
+            if($property.Value -is [Hashtable]) # Is it a Hashtable of more config values?
             {
                 $match.Value = (ConvertTo-PsObject $property.Value)
             }
-            elseif($property.Value -is [object[]] -and !($property.Value|where { $_ -isnot [Hashtable] }))
+            elseif($property.Value -is [object[]] -and !($property.Value|where { $_ -isnot [Hashtable] })) # Is it an array of only Hashtables?
             {
                 $match.Value = $property.Value | foreach { ConvertTo-PsObject $_ }
             }
             else
             {
-                $match.Value = $property.Value
+                if($property.Value -is [ScriptBlock]) # Is it an expression specifying how its value should be computed?
+                {
+                    # Replace this NoteProperty with a ScriptProperty!
+                    $component.PSObject.Properties.Remove($match.Name)
+                    $component | Add-Member ScriptProperty $match.Name $property.Value
+                }
+                else # It's just some value; assign it
+                {
+                    $match.Value = $property.Value
+                }
             }
         }
     }
@@ -107,7 +153,18 @@ function Apply-DscBoundParameters($component, $cmdlet)
 
             if($cmdlet.MyInvocation.BoundParameters.ContainsKey($member.Name))
             {
-                $component.$($member.Name) = $cmdlet.MyInvocation.BoundParameters[$member.Name]
+                $value = $cmdlet.MyInvocation.BoundParameters[$member.Name]
+
+                if($value -is [ScriptBlock])
+                {
+                    # Replace the NoteProperty with a ScriptProperty
+                    $component.PSObject.Properties.Remove($member.Name)
+                    $component | Add-Member ScriptProperty $member.Name $value
+                }
+                else
+                {
+                    $component.$($member.Name) = $value
+                }
             }
         }
     }
