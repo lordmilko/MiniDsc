@@ -50,6 +50,11 @@ function Component
         $component = $prototype | Copy-DscComponentPrototype
         $component.Type = $Name
 
+        if(!$component.PSObject.TypeNames.Contains($Name))
+        {
+            $component.PSObject.TypeNames.Add($Name)
+        }
+
         $component | Add-Member Base (New-Object PSObject) -Force
     }
     else

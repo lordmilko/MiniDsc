@@ -17,6 +17,7 @@ function New-DscComponentPrototype
 
     $component = New-Object Component $Type
     $component.PSObject.TypeNames.Add("ComponentPrototype")
+    $component.PSObject.TypeNames.Add($Type)
 
     $methods = @{
         GetLast     = { param($type) $global:currentExecutor.GetLast($type) }
@@ -26,6 +27,7 @@ function New-DscComponentPrototype
 
         HasMethod   = { param($name) ($this.PSObject.Methods|where Name -eq $name).Count -gt 0 }
         HasProperty = { param($name) ($this.PSObject.Properties|where Name -eq $name).Count -gt 0 }
+        Is =          { param($type) $this.PSObject.TypeNames.Contains($type) }
         ToString    = {
             $name = $this.PSObject.Properties|where Name -eq "Name"
 
@@ -79,7 +81,7 @@ function New-DscComponentPrototype
         }
 
         Find = {
-            param($type)
+            param($type, $predicate)
 
             $parent = $this.Parent
 
@@ -104,26 +106,48 @@ function New-DscComponentPrototype
             }
 
             $findInternal = {
-                param($parent, $type)
+                param($parent, $type, $predicate)
 
                 foreach($child in $parent.Children)
                 {
                     if($child.Type -eq $type)
                     {
-                        return $child
+                        if($predicate -ne $null)
+                        {
+                            if($predicate.InvokeWithContext($null, (New-Object PSVariable "_", $child)))
+                            {
+                                return $child
+                            }
+                        }
+                        else
+                        {
+                            return $child
+                        }                        
                     }
 
-                    return & $findInternal $child $type
+                    $result = & $findInternal $child $type $predicate
+
+                    if($result -ne $null)
+                    {
+                        return $result
+                    }
                 }
 
                 return $null
             }
 
-            $match = & $findInternal $parent $type
+            $match = & $findInternal $parent $type $predicate
 
             if(!$match)
             {
-                throw "Could not find a component of type '$type' in the tree."
+                if($predicate)
+                {
+                    throw "Could not find a component of type '$type' in the tree that matches the specified predicate '{$predicate}'."
+                }
+                else
+                {
+                    throw "Could not find a component of type '$type' in the tree."
+                }
             }
 
             return $match

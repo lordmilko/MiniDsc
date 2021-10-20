@@ -30,6 +30,14 @@ function Copy-DscComponentPrototype
         }
     }
 
+    foreach($typeName in $Prototype.PSObject.TypeNames)
+    {
+        if(!$newComponent.PSObject.TypeNames.Contains($typeName))
+        {
+            $newComponent.PSObject.TypeNames.Add($typeName)
+        }
+    }
+
     if ($AsInstance)
     {
         $newComponent.PSObject.TypeNames.Remove("ComponentPrototype") | Out-Null

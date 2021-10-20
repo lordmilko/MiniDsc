@@ -15,7 +15,7 @@ Describe "ComponentExtensions" {
     }
 
     BeforeEach {
-        "TestComponent","TestChildComponent","TestGrandChildComponent","TestExtendedComponent" | foreach {
+        "TestComponent","TestChildComponent","TestGrandChildComponent","TestExtendedComponent","TestExtendedExtendedComponent" | foreach {
             [Component]::KnownComponents.Remove($_)
             Get-Item Function:\$_ -ErrorAction SilentlyContinue|Remove-Item
         }
@@ -161,6 +161,22 @@ Describe "ComponentExtensions" {
         $result.Type | Should Be TestChildComponent
     }
 
+    It "Find(`$type, `$predicate): finds a node of a specified type that matches a specified predicate in the tree" {
+
+        Component TestComponent -CmdletType Empty @{}
+        Component TestChildComponent @{
+            Name=$null
+        }
+
+        $tree = TestComponent {
+            TestChildComponent first
+            TestChildComponent second
+        }
+
+        $match = $tree.Find("TestChildComponent", { $_.Name -eq "second" })
+        $match.Name | Should Be second
+    }
+
     It "Find(`$type): throws when a node of a specified type cannot be found in the tree" {
         
         Component TestComponent -CmdletType Empty  @{}
@@ -173,6 +189,21 @@ Describe "ComponentExtensions" {
         }
 
         { $tree.Find("foo") } | Should Throw "Could not find a component of type 'foo' in the tree."
+    }
+
+    It "Find(`$type): throws when a node of a specified type that matches a specified predicate cannot be found in the tree" {
+        
+        Component TestComponent -CmdletType Empty @{}
+        Component TestChildComponent @{
+            Name=$null
+        }
+
+        $tree = TestComponent {
+            TestChildComponent first
+            TestChildComponent second
+        }
+
+        { $tree.Find("TestChildComponent", { $_.Name -eq "third" }) } | Should Throw "Could not find a component of type 'TestChildComponent' in the tree that matches the specified predicate '{ `$_.Name -eq `"third`" }'"
     }
 
     It "GetLast(`$type): gets the last node of a specified type that was executed before this node" {
@@ -332,4 +363,46 @@ Describe "ComponentExtensions" {
 
         $Global:testVal -join "," | Should Be "derived,base"
     }
+
+    It "Is(`$type): identifies a component's type" {
+
+        Component TestComponent -CmdletType Empty @{}
+
+        $tree = TestComponent
+
+        $tree.Is("TestComponent") | Should Be $true
+    }
+
+    It "Is(`$type): identifies a component is not a given type" {
+        
+        Component TestComponent -CmdletType Empty @{}
+
+        $tree = TestComponent
+
+        $tree.Is("foo") | Should Be $false
+    }
+
+    It "Is(`$type): identifies a components parent type" {
+
+        Component TestComponent -CmdletType Empty @{}
+        Component TestExtendedComponent -CmdletType Empty -Extends TestComponent @{}
+
+        $tree = TestExtendedComponent
+
+        $tree.Is("TestComponent") | Should Be $true
+        $tree.Is("TestExtendedComponent") | Should Be $true
+    }
+
+    It "Is(`$type): identifies a components grandparent type" {
+        
+        Component TestComponent -CmdletType Empty @{}
+        Component TestExtendedComponent -CmdletType Empty -Extends TestComponent @{}
+        Component TestExtendedExtendedComponent -CmdletType Empty -Extends TestExtendedComponent @{}
+
+        $tree = TestExtendedExtendedComponent
+
+        $tree.Is("TestComponent") | Should Be $true
+        $tree.Is("TestExtendedComponent") | Should Be $true
+        $tree.Is("TestExtendedExtendedComponent") | Should Be $true
+    }    
 }
