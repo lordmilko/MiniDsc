@@ -6,6 +6,7 @@ function New-DscExecutor
     $executor | Add-Member LastOfType @{}
     $executor | Add-Member Level 0
     $executor | Add-Member Quiet $false
+    $executor | Add-Member Results @{}
     $executor | Add-Member ScriptMethod IncrementLevel { $this.Level++ }
     $executor | Add-Member ScriptMethod DecrementLevel { $this.Level-- }
     $executor | Add-Member ScriptMethod LogLevel       { param($message) $this.Log($message, "Magenta") }

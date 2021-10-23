@@ -19,6 +19,7 @@ function Get-DscComponentMember
         @{Name="DynamicSteps"; Type="ScriptBlock"; Description="Specifies a set of dynamic child components that should be evaluated for this node prior to evaluating its specified Steps or itself."}
         @{Name="Vars"; Type="Hashtable"; Description="Provides a scratch storage space for component methods to store variables within a component invocation."}
         @{Name="Base"; Type="Component"; Description="Provides access to the methods of the base component when one component -Extends another one."}
+        @{Name="WaitAsync"; Type="ScriptBlock/Hashtable"; Description="Enables all children that implement this member at a given level to concurrently asynchronously wait for completion prior to processing their children. Format should be @{Title=`"Title`"; Stages=@(@{Name=`"Stage`"; Test={return `$true})}. `$this can be used within each Test method."}
     )
 
     $results = $members | foreach { [PSCustomObject]$_|select Name,Type,Description }

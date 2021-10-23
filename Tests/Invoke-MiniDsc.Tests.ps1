@@ -324,6 +324,277 @@ Describe "Invoke-MiniDsc" {
 
             Test-Path $tree.Children[0].GetPath() | Should Be $true
         }
+
+        It "throws when WaitAsync is missing a title" {
+
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync=@{}
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Verify @{} -Children $children -Throws "Member 'WaitAsync' on component type 'TestChildComponent' does not implement property 'Title'"
+        }
+
+        It "throws when WaitAsync is missing stages" {
+            
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync=@{Title="Foo"}
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Verify @{} -Children $children -Throws "Member 'WaitAsync' on component type 'TestChildComponent' does not implement property 'Stages'"
+        }
+
+        It "throws when a WaitAsync stage is missing a name" {
+            
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync=@{
+                    Title="Foo"
+                    Stages=@{}
+                }
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Verify @{} -Children $children -Throws "Member 'WaitAsync -> Stage[0]' on component type 'TestChildComponent' does not implement property 'Name'"
+        }
+
+        It "throws when a WaitAsync stage is missing a test" {
+
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync=@{
+                    Title="Foo"
+                    Stages=@(
+                        @{Name="Bar"; Test={}}
+                        @{Name="Baz"}
+                    )
+                }
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Verify @{} -Children $children -Throws "Member 'WaitAsync -> Stage[1]' on component type 'TestChildComponent' does not implement property 'Test'"
+        }
+
+        It "executes WaitAsync with a single stage" {
+
+            $Global:testVal = 0
+
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync=@{
+                    Title="Foo"
+                    Stages=@{
+                        Name="Bar"
+                        Test={
+                            $Global:testVal++
+
+                            if($Global:testVal -eq 2)
+                            {
+                                return $true
+                            }
+                            else
+                            {
+                                return $false
+                            }
+                        }
+                    }
+                }
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Mock Start-Sleep {} -ModuleName "MiniDsc"
+
+            Verify @{} -Children $children {
+                $Global:testVal | Should Be 2
+            }
+        }
+
+        It "executes WaitAsync with a ScriptBlock" {
+            
+            $Global:testVal = 0
+
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync={
+                    $Global:testVal++
+
+                    if($Global:testVal -eq 2)
+                    {
+                        return $true
+                    }
+                    else
+                    {
+                        return $false
+                    }
+                }
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Mock Start-Sleep {} -ModuleName "MiniDsc"
+
+            Verify @{} -Children $children {
+                $Global:testVal | Should Be 2
+            }
+        }
+
+        It "doesn't execite WaitAsync when a step has already been applied" {
+            Component TestChildComponent @{
+                Name=$null
+
+                Test={$this.Name -eq "first"}
+                Apply={}
+
+                WaitAsync={
+                    if($this.Name -eq "first")
+                    {
+                        throw "Wait should not have been called for child 'first'"
+                    }
+
+                    $Global:testVal++
+
+                    return $true
+                }
+            }
+
+            $children = {
+                TestChildComponent first
+                TestChildComponent second
+            }
+
+            Verify @{} -Children $children {
+                $Global:testVal | Should Be 1
+            }
+        }
+
+        It "executes WaitAsync with a single stage in an array" {
+            
+            $Global:testVal = 0
+
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync=@{
+                    Title="Foo"
+                    Stages=@(@{
+                        Name="Bar"
+                        Test={
+                            $Global:testVal++
+
+                            if($Global:testVal -eq 2)
+                            {
+                                return $true
+                            }
+                            else
+                            {
+                                return $false
+                            }
+                        }
+                    })
+                }
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Mock Start-Sleep {} -ModuleName "MiniDsc"
+
+            Verify @{} -Children $children {
+                $Global:testVal | Should Be 2
+            }
+        }
+
+        It "executes WaitAsync with multiple stages" {
+            
+            $Global:testVal = @{}
+
+            Component TestChildComponent -CmdletType Empty @{
+                Test={$false}
+                Apply={}
+
+                WaitAsync=@{
+                    Title="Foo"
+                    Stages=@(
+                        @{
+                            Name="Bar"
+                            Test={
+                                $Global:testVal.First++
+
+                                if($Global:testVal.First -eq 2)
+                                {
+                                    return $true
+                                }
+                                else
+                                {
+                                    return $false
+                                }
+                            }
+                        },
+
+                        @{
+                            Name="Baz"
+                            Test={
+                                $Global:testVal.Second++
+
+                                if($Global:testVal.Second -eq 2)
+                                {
+                                    return $true
+                                }
+                                else
+                                {
+                                    return $false
+                                }
+                            }
+                        }
+                    )
+                }
+            }
+
+            $children = {
+                TestChildComponent
+            }
+
+            Mock Start-Sleep {} -ModuleName "MiniDsc"
+
+            Verify @{} -Children $children {
+                $Global:testVal.First | Should Be 2
+                $Global:testVal.Second | Should Be 2
+            }
+        }
     }
 
     Context "Revert" {

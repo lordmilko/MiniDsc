@@ -41,6 +41,15 @@ function New-DscComponentPrototype
             }
         }
 
+        AssertParent = {
+            param($type)
+
+            if(!$this.Parent.Is($type))
+            {
+                throw "The parent of a '$($this.Type)' component should be some type of '$type' component. Actual type: '$($this.Parent.Type)'"
+            }
+        }
+
         GetParent   = {
             param($type)
 

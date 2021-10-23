@@ -31,7 +31,7 @@ function Invoke-MiniDsc
             }
 
             "Apply" {
-                $executor | Invoke-ApplyRunner $Root
+                $executor | Invoke-ApplyRunner $Root -WaitMode None
             }
 
             "Revert" {

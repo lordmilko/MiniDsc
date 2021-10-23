@@ -12,14 +12,24 @@ function Invoke-ApplyRunner
         $Node,
 
         [Parameter(Mandatory=$false)]
-        [string]$InvokeType
+        [string]$InvokeType,
+
+        [Parameter(Mandatory=$true)]
+        [string]$WaitMode
     )
 
-    $stepConfig = $Executor | InvokeRunnerInit $Node -InvokeType $InvokeType
+    $stepConfig = $Executor | InvokeRunnerInit $Node -InvokeType $InvokeType -WaitMode $WaitMode
 
-    $Executor | InvokeRunnerDynamicSteps $Node -Mode Apply
-    $Executor | InvokeRunnerNormalSteps $Node $stepConfig -Mode Apply
-    $Executor | InvokeRunnerChildren $Node -Mode Apply
+    if($WaitMode -ne "Continue")
+    {
+        $Executor | InvokeRunnerDynamicSteps $Node -Mode Apply
+        $Executor | InvokeRunnerNormalSteps $Node $stepConfig -Mode Apply -WaitMode $WaitMode
+    }
+
+    if($WaitMode -eq "None" -or $WaitMode -eq "Continue")
+    {
+        $Executor | InvokeRunnerChildren $Node -Mode Apply
+    }
 
     $Executor | InvokeRunnerEnd $Node
 }
@@ -42,10 +52,10 @@ function Invoke-RevertRunner
         [string]$InvokeType
     )
 
-    $stepConfig = $Executor | InvokeRunnerInit $Node -InvokeType $InvokeType
+    $stepConfig = $Executor | InvokeRunnerInit $Node -InvokeType $InvokeType -WaitMode None
 
     $Executor | InvokeRunnerChildren $Node -Mode Revert
-    $Executor | InvokeRunnerNormalSteps $Node $stepConfig -Mode Revert
+    $Executor | InvokeRunnerNormalSteps $Node $stepConfig -Mode Revert -WaitMode None
     $Executor | InvokeRunnerDynamicSteps $Node -Mode Revert
 
     $Executor | InvokeRunnerEnd $Node
@@ -66,7 +76,10 @@ function InvokeRunnerInit
         $Node,
 
         [Parameter(Mandatory=$false)]
-        [string]$InvokeType
+        [string]$InvokeType,
+
+        [Parameter(Mandatory=$true)]
+        [string]$WaitMode
     )
 
     if($InvokeType)
@@ -74,7 +87,14 @@ function InvokeRunnerInit
         $InvokeType = "[$InvokeType]"
     }
 
-    $Executor.LogLevel("$($InvokeType)Processing node '$Node'")
+    $processingType = "Processing"
+
+    if($WaitMode -eq "Continue")
+    {
+        $processingType = "Continuing"
+    }
+
+    $Executor.LogLevel("$($InvokeType)$($processingType) node '$Node'")
     $Executor.LastOfType.$($Node.Type) = $Node
     $Executor.IncrementLevel()
 
@@ -126,7 +146,7 @@ function InvokeRunnerDynamicSteps
         {
             $dynamicStep.Parent = $Node
 
-            $Executor | RecurseInvokeRunner $dynamicStep -Mode $Mode
+            $Executor | RecurseInvokeRunner $dynamicStep -Mode $Mode -WaitMode None
         }
     }
 }
@@ -146,7 +166,10 @@ function InvokeRunnerNormalSteps
         $StepConfig,
 
         [Parameter(Mandatory=$true)]
-        $Mode
+        $Mode,
+
+        [Parameter(Mandatory=$true)]
+        $WaitMode
     )
 
     if($Mode -eq "Revert" -and !($StepConfig.Steps.Count -eq 1 -and $StepConfig.Steps[0] -eq $null))
@@ -191,6 +214,20 @@ function InvokeRunnerNormalSteps
         if($Node.HasMethod("Test$step"))
         {
             $testResult = $node."Test$step"()
+
+            if(!$Executor.Results.ContainsKey($Node))
+            {
+                $Executor.Results.Add($node, @{})
+            }
+
+            $key = $step
+
+            if($step -eq $null)
+            {
+                $key = "Default"
+            }
+
+            $Executor.Results[$Node].Add($key, $testResult)
 
             if([Component]::IsPermanent.Equals($testResult))
             {
@@ -292,17 +329,171 @@ function InvokeRunnerNormalChildren
 
     if($Node.Children)
     {
+        $waitMode = "None"
+
         $children = @($Node.Children|where { !$_.ForEach })
 
         if($Mode -eq "Revert")
         {
             [array]::Reverse($children)
         }
+        else
+        {
+            $waitable = $children | where { $_.HasMethod("WaitAsync") -or $_.HasProperty("WaitAsync") }
+
+            if($waitable)
+            {
+                $Executor | InvokeWaitableChildren $Waitable -Mode $Mode
+
+                # Children with no children of their own don't need to be continued
+                $children = $children | where { $_.Children.Count -gt 0 }
+                $waitMode = "Continue"
+            }
+        }
 
         foreach($child in $children)
         {
-            $Executor | RecurseInvokeRunner $child -Mode $Mode
+            $Executor | RecurseInvokeRunner $child -Mode $Mode -WaitMode $waitMode
         }
+    }
+}
+
+function InvokeWaitableChildren
+{
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true, ValueFromPipeline=$true)]
+        [PSTypeName("Executor")]
+        $Executor,
+
+        [Parameter(Mandatory=$true, Position=0)]
+        $Waitable,
+
+        [Parameter(Mandatory=$true)]
+        $Mode
+    )
+
+    foreach($child in $Waitable)
+    {
+        $Executor | RecurseInvokeRunner $child -Mode $Mode -WaitMode Wait
+    }
+
+    $Waitable = @($Waitable | where { @($Executor.Results[$_].Values | where { !$_ }).Count -gt 0 })
+
+    if($Waitable.Count -eq 0)
+    {
+        return
+    }
+
+    $str = if($Waitable.Count -eq 1) { "child" } else { "children" }
+
+    $Executor.LogInfo("")
+    $Executor.LogInfo("Waiting for $($Waitable.Count) asynchronous $str to complete...")
+    $Executor.LogInfo("")
+
+    $items = @()
+
+    for($i = 0; $i -lt $Waitable.Count; $i++)
+    {
+        $child = $Waitable[$i]
+
+        $waitAsync = $null
+
+        if($child.HasMethod("WaitAsync"))
+        {
+            $waitAsync = @{
+                Title = ""
+                Stages = @{
+                    Name = ""
+                    Test = { $child.WaitAsync() }.GetNewClosure()
+                }
+            }
+        }
+        else
+        {
+            $waitAsync = $child.WaitAsync
+        }        
+
+        if(!$waitAsync.ContainsKey("Title"))
+        {
+            throw "Member 'WaitAsync' on component type '$child' does not implement property 'Title'"
+        }
+
+        if(!$waitAsync.ContainsKey("Stages"))
+        {
+            throw "Member 'WaitAsync' on component type '$($child.Type)' does not implement property 'Stages'"
+        }
+
+        $items += [PSCustomObject]@{
+            Component = $child
+            Index = $i
+            Title = "$child $($waitAsync.Title)"
+            $i = 0
+            Stages = @(@($waitAsync.Stages) | foreach {
+
+                if(!$_.ContainsKey("Name"))
+                {
+                    throw "Member 'WaitAsync -> Stage[$i]' on component type '$($child.Type)' does not implement property 'Name'"
+                }
+
+                if(!$_.ContainsKey("Test"))
+                {
+                    throw "Member 'WaitAsync -> Stage[$i]' on component type '$($child.Type)' does not implement property 'Test'"
+                }
+
+                ([PSCustomObject]$_) | Add-Member Completed $false -PassThru
+
+                $i++
+            })
+            Completed = $false
+        }
+    }
+
+    while($items|where Completed -eq $false)
+    {
+        foreach($item in $items)
+        {
+            $stage = ($item.Stages | where Completed -eq $false | select -first 1)
+
+            $status = "Waiting for event '$($stage.Name)'"
+
+            if([string]::IsNullOrEmpty($stage.Name))
+            {
+                $status = "Waiting for component to complete"
+            }
+
+            $progressArgs = @{
+                Id = $item.Index
+                Activity = $item.Title
+                Status = $status
+                PercentComplete = ([array]::IndexOf($item.Stages, $stage) + 1) / $item.Stages.Length * 100
+            }
+
+            if(!$stage)
+            {
+                if($item.Completed)
+                {
+                    continue
+                }
+
+                $progressArgs.Completed = $true
+                $item.Completed = $true
+            }
+
+            Write-Progress @progressArgs
+
+            if($stage)
+            {
+                $result = $stage.Test.InvokeWithContext($null, (New-Object PSVariable "this", $item.Component))
+
+                if($result)
+                {
+                    $stage.Completed = $true
+                }
+            }
+        }
+
+        sleep 3
     }
 }
 
@@ -336,7 +527,7 @@ function InvokeRunnerForEachChildren
 
             foreach($child in $forEachChildren)
             {
-                $Executor | RecurseInvokeRunner $child -Mode $Mode -InvokeType ForEach
+                $Executor | RecurseInvokeRunner $child -Mode $Mode -InvokeType ForEach -WaitMode None
             }
         }
 
@@ -359,13 +550,16 @@ function RecurseInvokeRunner
         $Mode,
 
         [Parameter(Mandatory=$false)]
-        [string]$InvokeType
+        [string]$InvokeType,
+
+        [Parameter(Mandatory=$false)]
+        [string]$WaitMode
     )
 
     switch($Mode)
     {
         "Apply" {
-            $Executor | Invoke-ApplyRunner $Node -InvokeType $InvokeType
+            $Executor | Invoke-ApplyRunner $Node -InvokeType $InvokeType -WaitMode $WaitMode
         }
 
         "Revert" {
